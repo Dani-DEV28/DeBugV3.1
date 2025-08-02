@@ -1,8 +1,8 @@
+// server.js
 import express from 'express';
-import cors from 'cors';
-import path from 'path';
+import dotenv from 'dotenv';
 import fetch from 'node-fetch';
-import dotenv from 'dotenv'; // npm install node-fetch@2
+import path from 'path';
 import { fileURLToPath } from 'url';
 
 dotenv.config();
@@ -13,44 +13,50 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Your Hugging Face API key
-const HF_API_KEY = process.env.API_KEY;
-
-app.use(cors());
+// Middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Serve static files (index.html, deepGen.js, script.js, style.css)
+// Serve static files
 app.use(express.static(__dirname));
 app.use('/test-data', express.static(path.join(__dirname, 'test-data')));
 
-// Proxy endpoint to Hugging Face API
-app.post('/api/deepseek', async (req, res) => {
-  try {
-    const prompt = req.body.prompt;
-    if (!prompt) {
-      return res.status(400).json({ error: 'No prompt provided' });
-    }
+// API route
+app.post("/api/deepseek", async (req, res) => {
+  const prompt = req.body.prompt;
 
-    const response = await fetch('https://api-inference.huggingface.co/models/deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B', {
-      method: 'POST',
+  if (!prompt) {
+    return res.status(400).json({ error: "Prompt is required." });
+  }
+
+  try {
+    const response = await fetch("https://router.huggingface.co/v1/chat/completions", {
+      method: "POST",
       headers: {
-        Authorization: `Bearer ${HF_API_KEY}`,
-        'Content-Type': 'application/json',
+        Authorization: `Bearer ${process.env.HF_TOKEN}`,
+        "Content-Type": "application/json",
       },
-      body: JSON.stringify({ inputs: prompt }),
+      body: JSON.stringify({
+        model: "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B:featherless-ai",
+        messages: [
+          { role: "system", content: "You are a helpful medical assistant." },
+          { role: "user", content: prompt },
+        ],
+      }),
     });
 
+    const result = await response.json();
+
     if (!response.ok) {
-      const errorText = await response.text();
-      return res.status(response.status).json({ error: errorText });
+      return res.status(response.status).json({ error: result.error || "Model query failed" });
     }
 
-    const data = await response.json();
-    return res.json(data);
+    const message = result?.choices?.[0]?.message?.content || "No response.";
+    res.json([{ generated_text: message }]);
+
   } catch (err) {
-    console.error('Error forwarding request:', err);
-    return res.status(500).json({ error: 'Internal server error' });
+    console.error("Error:", err);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
